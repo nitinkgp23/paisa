@@ -1,7 +1,6 @@
 package stocks
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 
 	"github.com/ananthakumaran/paisa/internal/accounting"
 	"github.com/ananthakumaran/paisa/internal/model/posting"
-	"github.com/ananthakumaran/paisa/internal/model/price"
 	"github.com/ananthakumaran/paisa/internal/model/stock_tag"
 	"github.com/ananthakumaran/paisa/internal/model/stock_target_price"
 	"github.com/ananthakumaran/paisa/internal/query"
@@ -85,7 +83,7 @@ func GetDashboard(db *gorm.DB) gin.H {
 }
 
 func GetBalance(db *gorm.DB) gin.H {
-	return doGetBalance(db, "Assets:%", true)
+	return doGetBalance(db, "Assets:Equity:Stocks:%", true)
 }
 
 func doGetBalance(db *gorm.DB, pattern string, rollup bool) gin.H {
@@ -224,25 +222,10 @@ func ComputeBreakdown(db *gorm.DB, ps []posting.Posting, leaf bool, group string
 		}
 	}
 
-	// Get the latest price from the prices table
 	lastTradedPrice := decimal.Zero
 	if leaf && len(ps) > 0 {
-		// Get the commodity name from the first posting
-		commodityName := ps[0].Commodity
-		// Get the latest price from the prices table
-		var latestPrice price.Price
-		result := db.Where("commodity_name = ?", commodityName).
-			Order("date desc").
-			First(&latestPrice)
-		if result.Error == nil {
-			fmt.Printf("Latest price for %s: %s\n", commodityName, latestPrice.Value)
-			lastTradedPrice = latestPrice.Value
-		} else {
-			log.Debugf("Failed to fetch latest price for %s: %v", commodityName, result.Error)
-		}
+		lastTradedPrice = service.GetUnitPrice(db, ps[0].Commodity, utils.EndOfToday()).Value
 	}
-	// TODO(Nitin) : The above call is very slow.Fix the above to use below line (it uses cache).
-	// lastTradedPrice := service.GetMarketPrice(db, ps[0], time.Now())
 
 	return AssetBreakdown{
 		InvestmentAmount: investmentAmount,
