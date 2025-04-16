@@ -85,8 +85,15 @@
 				body: JSON.stringify({ symbol, tag: newTag, color: newTagColor }),
 			});
 			if (response.ok) {
-				const updatedStocks = await fetch('/api/stocks').then(r => r.json());
-				stocks = updatedStocks.stocks;
+				stocks = stocks.map(stock => {
+					if (stock.symbol === symbol) {
+						return {
+							...stock,
+							tags: [...(stock.tags || []), { tag: newTag, color: newTagColor }]
+						};
+					}
+					return stock;
+				});
 				editingTag = null;
 				newTag = '';
 			}

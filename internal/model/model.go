@@ -35,6 +35,7 @@ func AutoMigrate(db *gorm.DB) {
 	db.AutoMigrate(&cache.Cache{})
 	db.AutoMigrate(&stock_target_price.StockTargetPrice{})
 	db.AutoMigrate(&stock_tag.StockTag{})
+	db.AutoMigrate(&stock_tag.StockTagAssociation{})
 }
 
 func SyncJournal(db *gorm.DB) (string, error) {
