@@ -29,14 +29,31 @@
 	let newTag: string = '';
 	let newTagColor: string = '#4F46E5';
 	let selectedTags: string[] = [];
+	let selectedActionTags: string[] = [];
+	let selectedTermTags: string[] = [];
 	let includeEsops: boolean = false;
 
-	$: uniqueTags = [...new Set(stocks.flatMap(stock => stock.tags?.map(t => t.tag) || []))].filter(tag => tag !== 'esops');
+	$: uniqueTags = [...new Set(stocks.flatMap(stock => stock.tags?.map(t => t.tag) || []))]
+		.filter(tag => tag !== 'esops' && tag !== 'hold' && tag !== 'buy' && tag !== 'long term' && tag !== 'short term');
+	$: actionTags = ['hold', 'buy'];
+	$: termTags = ['long term', 'short term'];
 
 	$: filteredStocks = stocks.filter(stock => {
 		// First check if it's an ESOP and handle accordingly
 		const isEsop = stock.tags?.some(t => t.tag === 'esops');
 		if (isEsop && !includeEsops) return false;
+
+		// Check if stock matches any of the selected action tags (hold/buy)
+		if (selectedActionTags.length > 0) {
+			const hasActionTag = selectedActionTags.some(tag => stock.tags?.some(t => t.tag === tag));
+			if (!hasActionTag) return false;
+		}
+
+		// Check if stock matches any of the selected term tags
+		if (selectedTermTags.length > 0) {
+			const hasTermTag = selectedTermTags.some(tag => stock.tags?.some(t => t.tag === tag));
+			if (!hasTermTag) return false;
+		}
 
 		// Then handle regular tag filtering - show union of selected tags
 		if (selectedTags.length === 0) return true;
@@ -203,6 +220,40 @@
 				bind:checked={includeEsops}
 			/>
 			<span class="text-sm font-medium">Include ESOPs in reporting</span>
+		</div>
+
+		<div class="flex flex-wrap gap-2 p-2 border rounded-md bg-gray-50">
+			{#each actionTags as tag}
+				<label class="inline-flex items-center px-3 py-2 border rounded-md text-sm cursor-pointer hover:bg-gray-50">
+					<input
+						type="checkbox"
+						class="form-checkbox h-4 w-4 text-indigo-600"
+						bind:group={selectedActionTags}
+						value={tag}
+					/>
+					<span class="ml-2 flex items-center gap-2">
+						<div class="w-3 h-3 rounded-full" style="background-color: {stocks.find(s => s.tags?.some(t => t.tag === tag))?.tags?.find(t => t.tag === tag)?.color || '#4F46E5'}"></div>
+						{tag}
+					</span>
+				</label>
+			{/each}
+		</div>
+
+		<div class="flex flex-wrap gap-2 p-2 border rounded-md bg-gray-50">
+			{#each termTags as tag}
+				<label class="inline-flex items-center px-3 py-2 border rounded-md text-sm cursor-pointer hover:bg-gray-50">
+					<input
+						type="checkbox"
+						class="form-checkbox h-4 w-4 text-indigo-600"
+						bind:group={selectedTermTags}
+						value={tag}
+					/>
+					<span class="ml-2 flex items-center gap-2">
+						<div class="w-3 h-3 rounded-full" style="background-color: {stocks.find(s => s.tags?.some(t => t.tag === tag))?.tags?.find(t => t.tag === tag)?.color || '#4F46E5'}"></div>
+						{tag}
+					</span>
+				</label>
+			{/each}
 		</div>
 
 		<div class="flex flex-wrap gap-2">
