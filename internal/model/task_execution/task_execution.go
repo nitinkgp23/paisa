@@ -24,21 +24,21 @@ func isDatabaseLockedError(err error) bool {
 		return false
 	}
 	return strings.Contains(err.Error(), "database is locked") ||
-		   strings.Contains(err.Error(), "database table is locked") ||
-		   strings.Contains(err.Error(), "busy")
+		strings.Contains(err.Error(), "database table is locked") ||
+		strings.Contains(err.Error(), "busy")
 }
 
 // retryOnLockedDatabase retries the operation if the database is locked
 func retryOnLockedDatabase(operation func() error) error {
 	maxRetries := 5
 	backoff := 10 * time.Millisecond
-	
+
 	for i := 0; i < maxRetries; i++ {
 		err := operation()
 		if err == nil {
 			return nil
 		}
-		
+
 		if isDatabaseLockedError(err) {
 			if i < maxRetries-1 {
 				time.Sleep(backoff)
@@ -46,21 +46,21 @@ func retryOnLockedDatabase(operation func() error) error {
 				continue
 			}
 		}
-		
+
 		return err
 	}
-	
+
 	return nil
 }
 
 // GetLastRun retrieves the last run time for a task
 func GetLastRun(db *gorm.DB, taskName string) (time.Time, error) {
 	var execution TaskExecution
-	
+
 	err := retryOnLockedDatabase(func() error {
 		return db.Where("task_name = ?", taskName).First(&execution).Error
 	})
-	
+
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// Return zero time if task has never been run
@@ -68,18 +68,18 @@ func GetLastRun(db *gorm.DB, taskName string) (time.Time, error) {
 		}
 		return time.Time{}, err
 	}
-	
+
 	return execution.LastRun, nil
 }
 
 // GetLastSuccessfulRun retrieves the last successful run time for a task
 func GetLastSuccessfulRun(db *gorm.DB, taskName string) (time.Time, error) {
 	var execution TaskExecution
-	
+
 	err := retryOnLockedDatabase(func() error {
 		return db.Where("task_name = ?", taskName).First(&execution).Error
 	})
-	
+
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// Return zero time if task has never been run successfully
@@ -87,20 +87,20 @@ func GetLastSuccessfulRun(db *gorm.DB, taskName string) (time.Time, error) {
 		}
 		return time.Time{}, err
 	}
-	
+
 	return execution.LastSuccessfulRun, nil
 }
 
 // UpdateLastRun updates the last run time for a task
 func UpdateLastRun(db *gorm.DB, taskName string) error {
 	now := time.Now()
-	
+
 	return retryOnLockedDatabase(func() error {
 		// Use upsert to create or update the record
 		return db.Transaction(func(tx *gorm.DB) error {
 			var execution TaskExecution
 			err := tx.Where("task_name = ?", taskName).First(&execution).Error
-			
+
 			if err == gorm.ErrRecordNotFound {
 				// Create new record
 				execution = TaskExecution{
@@ -114,7 +114,7 @@ func UpdateLastRun(db *gorm.DB, taskName string) error {
 			} else if err != nil {
 				return err
 			}
-			
+
 			// Update existing record
 			execution.LastRun = now
 			execution.Success = false
@@ -127,13 +127,13 @@ func UpdateLastRun(db *gorm.DB, taskName string) error {
 // UpdateLastSuccessfulRun updates the last successful run time for a task
 func UpdateLastSuccessfulRun(db *gorm.DB, taskName string) error {
 	now := time.Now()
-	
+
 	return retryOnLockedDatabase(func() error {
 		// Use upsert to create or update the record
 		return db.Transaction(func(tx *gorm.DB) error {
 			var execution TaskExecution
 			err := tx.Where("task_name = ?", taskName).First(&execution).Error
-			
+
 			if err == gorm.ErrRecordNotFound {
 				// Create new record
 				execution = TaskExecution{
@@ -148,7 +148,7 @@ func UpdateLastSuccessfulRun(db *gorm.DB, taskName string) error {
 			} else if err != nil {
 				return err
 			}
-			
+
 			// Update existing record
 			execution.LastRun = now
 			execution.LastSuccessfulRun = now
@@ -165,16 +165,16 @@ func ShouldRunToday(db *gorm.DB, taskName string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	
+
 	if lastSuccessfulRun.IsZero() {
 		// Task has never been run successfully, should run today
 		return true, nil
 	}
-	
+
 	// Check if last successful run was today
 	now := time.Now()
 	lastRunDate := time.Date(lastSuccessfulRun.Year(), lastSuccessfulRun.Month(), lastSuccessfulRun.Day(), 0, 0, 0, 0, lastSuccessfulRun.Location())
 	todayDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	
+
 	return lastRunDate.Before(todayDate), nil
-} 
+}

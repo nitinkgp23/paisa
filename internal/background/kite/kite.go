@@ -13,25 +13,25 @@ import (
 
 	"github.com/shopspring/decimal"
 	log "github.com/sirupsen/logrus"
-	"gorm.io/gorm"
 	"gopkg.in/yaml.v3"
+	"gorm.io/gorm"
 
 	"github.com/ananthakumaran/paisa/internal/config"
 )
 
 // Trade represents a trade from KITE Connect API
 type Trade struct {
-	TradeID       string          `json:"trade_id"`
-	OrderID       string          `json:"order_id"`
-	ExchangeOrderID string        `json:"exchange_order_id"`
-	TradingSymbol string          `json:"tradingsymbol"`
-	Exchange      string          `json:"exchange"`
-	TransactionType string        `json:"transaction_type"` // BUY or SELL
-	Product       string          `json:"product"`
-	AveragePrice  decimal.Decimal `json:"average_price"`
-	Quantity      int             `json:"quantity"`
-	FillTimestamp time.Time       `json:"fill_timestamp"`
-	ExchangeTimestamp time.Time   `json:"exchange_timestamp"`
+	TradeID           string          `json:"trade_id"`
+	OrderID           string          `json:"order_id"`
+	ExchangeOrderID   string          `json:"exchange_order_id"`
+	TradingSymbol     string          `json:"tradingsymbol"`
+	Exchange          string          `json:"exchange"`
+	TransactionType   string          `json:"transaction_type"` // BUY or SELL
+	Product           string          `json:"product"`
+	AveragePrice      decimal.Decimal `json:"average_price"`
+	Quantity          int             `json:"quantity"`
+	FillTimestamp     time.Time       `json:"fill_timestamp"`
+	ExchangeTimestamp time.Time       `json:"exchange_timestamp"`
 }
 
 type DailyTradesTask struct{}
@@ -66,8 +66,6 @@ func (t *DailyTradesTask) Run(ctx context.Context, db *gorm.DB) error {
 
 	log.Info("Successfully authenticated with KITE Connect")
 
-
-
 	// Fetch trades for today
 	trades, err := fetchDailyTrades(ctx, kiteConfig.APIKey, accessToken)
 	if err != nil {
@@ -101,11 +99,11 @@ func loadKiteConfig() (*KiteConfig, error) {
 	if _, err := os.Stat(kiteConfigPath); os.IsNotExist(err) {
 		// Create a template config file
 		templateConfig := &KiteConfig{
-			APIKey:     "your_api_key_here",
-			APISecret:  "your_api_secret_here",
-			UserID:     "your_user_id_here",
-			Password:   "your_password_here",
-			TOTPToken:  "your_totp_secret_here", // Base32 encoded TOTP secret
+			APIKey:    "your_api_key_here",
+			APISecret: "your_api_secret_here",
+			UserID:    "your_user_id_here",
+			Password:  "your_password_here",
+			TOTPToken: "your_totp_secret_here", // Base32 encoded TOTP secret
 		}
 
 		// Generate proper YAML
@@ -191,7 +189,7 @@ func fetchDailyTrades(ctx context.Context, apiKey string, accessToken string) ([
 // saveTradesToLedger converts trades to ledger format and saves them
 func saveTradesToLedger(db *gorm.DB, trades []Trade, date string) error {
 	journalPath := config.GetJournalPath()
-	
+
 	// Read existing journal content
 	journalContent, err := os.ReadFile(journalPath)
 	if err != nil {
@@ -240,7 +238,7 @@ func generateLedgerEntry(trade Trade, date string) string {
 	// Determine transaction type and quantity
 	quantity := trade.Quantity
 	description := ""
-	
+
 	if trade.TransactionType == "BUY" {
 		description = fmt.Sprintf("Purchased %d Shares of %s", quantity, trade.TradingSymbol)
 	} else if trade.TransactionType == "SELL" {
@@ -256,7 +254,7 @@ func generateLedgerEntry(trade Trade, date string) string {
 
 	// Generate ledger entry
 	entry := fmt.Sprintf("%s %s\n", tradeDate.Format("2006/01/02"), description)
-	entry += fmt.Sprintf("    Assets:Stocks:%s\t\t\t%d \"%s\" @ %s INR\n", 
+	entry += fmt.Sprintf("    Assets:Stocks:%s\t\t\t%d \"%s\" @ %s INR\n",
 		trade.TradingSymbol, quantity, trade.TradingSymbol, price.String())
 	entry += "    Assets:Broker:Zerodha"
 

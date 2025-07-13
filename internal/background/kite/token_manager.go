@@ -3,11 +3,11 @@ package kite
 import (
 	"encoding/json"
 	"fmt"
+	log "github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 	"io"
 	"net/http"
 	"time"
-	log "github.com/sirupsen/logrus"
-	"gorm.io/gorm"
 
 	"github.com/ananthakumaran/paisa/internal/model"
 )
@@ -61,7 +61,7 @@ func GetValidAccessToken(db *gorm.DB, apiKey string) (string, error) {
 func checkIfAccessTokenIsExpired(apiKey string, accessToken string) bool {
 	// Make request to get user profile using the access token
 	url := "https://api.kite.trade/user/profile"
-	
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		log.Errorf("Failed to create request: %v", err)
@@ -121,7 +121,7 @@ func checkIfAccessTokenIsExpired(apiKey string, accessToken string) bool {
 // getAccessTokenFromRequestTokenWithRetry attempts to get an access token with automatic retry logic
 func getAccessTokenFromRequestTokenWithRetry(db *gorm.DB, requestToken string) (string, error) {
 	const maxRetries = 2
-	
+
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		accessToken, err := FetchAccessTokenFromRequestToken(requestToken)
 		if err == nil {
@@ -132,7 +132,7 @@ func getAccessTokenFromRequestTokenWithRetry(db *gorm.DB, requestToken string) (
 		if attempt == maxRetries {
 			return "", fmt.Errorf("failed to get access token after %d attempts: %w", maxRetries+1, err)
 		}
-		
+
 		log.Infof("Attempt %d failed to fetch access token, starting new login flow...", attempt+1)
 
 		// Start a new login flow to get a fresh request token

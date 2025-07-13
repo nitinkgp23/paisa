@@ -490,23 +490,23 @@ func ListenWithContext(ctx context.Context, db *gorm.DB, port int) error {
 
 	// Wait for context cancellation (shutdown signal)
 	<-ctx.Done()
-	
+
 	// Graceful shutdown
 	log.Info("Shutting down HTTP server...")
-	
+
 	// Stop the background scheduler first
 	log.Info("Stopping background scheduler...")
 	background.GetScheduler().Stop()
-	
+
 	// Then shutdown the HTTP server
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Errorf("Server shutdown error: %v", err)
 		return err
 	}
-	
+
 	log.Info("Server shutdown completed successfully")
 	return nil
 }

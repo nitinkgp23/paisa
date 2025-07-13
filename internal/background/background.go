@@ -96,7 +96,7 @@ func (s *Scheduler) Stop() {
 	}
 
 	log.Info("Stopping background scheduler...")
-	
+
 	// Stop the cron scheduler
 	ctx := s.cron.Stop()
 	<-ctx.Done()
@@ -159,7 +159,7 @@ func (s *Scheduler) registerTask(task Task) {
 	// Store the mapping between entry ID and task name
 	s.entryToTask[entryID] = task.Name()
 
-	log.Infof("Registered background task: %s (schedule: %s, entry ID: %d)", 
+	log.Infof("Registered background task: %s (schedule: %s, entry ID: %d)",
 		task.Name(), task.Schedule(), entryID)
 }
 
@@ -188,12 +188,12 @@ func (s *Scheduler) runStartupTasks() {
 			go func(t Task) {
 				defer s.wg.Done()
 				start := time.Now()
-				
+
 				// Update last run time before starting
 				if err := task_execution.UpdateLastRun(s.db, t.Name()); err != nil {
 					log.Errorf("Failed to update last run time for task %s: %v", t.Name(), err)
 				}
-				
+
 				if err := t.Run(s.ctx, s.db); err != nil {
 					log.Errorf("Failed to run startup task %s: %v", t.Name(), err)
 				} else {
@@ -229,4 +229,4 @@ func (s *Scheduler) GetNextRunTimes() map[string]time.Time {
 	}
 
 	return nextRuns
-} 
+}

@@ -62,10 +62,10 @@ func InitLogger(desktop bool, hook log.Hook) {
 		DisableColors:    desktop,
 		PadLevelText:     true,
 	}
-	
+
 	// Always enable caller reporting for better debugging
 	log.SetReportCaller(true)
-	
+
 	if os.Getenv("PAISA_DEBUG") == "true" {
 		log.SetLevel(log.DebugLevel)
 		formatter.CallerPrettyfier = func(f *runtime.Frame) (string, string) {

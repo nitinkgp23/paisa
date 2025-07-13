@@ -19,19 +19,19 @@ import (
 )
 
 const (
-	BASE_URL = "https://kite.zerodha.com"
-	LOGIN_URL = BASE_URL + "/api/login"
-	TWOFA_URL = BASE_URL + "/api/twofa"
+	BASE_URL        = "https://kite.zerodha.com"
+	LOGIN_URL       = BASE_URL + "/api/login"
+	TWOFA_URL       = BASE_URL + "/api/twofa"
 	INSTRUMENTS_URL = "https://api.kite.trade/instruments"
 )
 
 // KiteConfig holds the configuration for KITE Connect API
 type KiteConfig struct {
-	APIKey     string `json:"api_key" yaml:"api_key"`
-	APISecret  string `json:"api_secret" yaml:"api_secret"`
-	UserID     string `json:"user_id" yaml:"user_id"`
-	Password   string `json:"password" yaml:"password"`
-	TOTPToken  string `json:"totp_token" yaml:"totp_token"`
+	APIKey    string `json:"api_key" yaml:"api_key"`
+	APISecret string `json:"api_secret" yaml:"api_secret"`
+	UserID    string `json:"user_id" yaml:"user_id"`
+	Password  string `json:"password" yaml:"password"`
+	TOTPToken string `json:"totp_token" yaml:"totp_token"`
 }
 
 // LoginResponse represents the response from KITE login
@@ -64,12 +64,12 @@ func generateTOTP(secret string) (string, error) {
 func LoginAndStoreToken(db *gorm.DB) error {
 	kiteConfig, err := loadKiteConfig()
 	if err != nil {
-        return fmt.Errorf("failed to load KITE config: %w", err)
+		return fmt.Errorf("failed to load KITE config: %w", err)
 	}
 
-    if kiteConfig.APIKey == "" || kiteConfig.APISecret == "" || kiteConfig.UserID == "" || kiteConfig.Password == "" || kiteConfig.TOTPToken == "" {
-        return fmt.Errorf("KITE Connect API credentials not configured (missing API key, secret, user ID, password, or TOTP token)")
-    }
+	if kiteConfig.APIKey == "" || kiteConfig.APISecret == "" || kiteConfig.UserID == "" || kiteConfig.Password == "" || kiteConfig.TOTPToken == "" {
+		return fmt.Errorf("KITE Connect API credentials not configured (missing API key, secret, user ID, password, or TOTP token)")
+	}
 
 	// Attempt to auto login using saved credentials first. If successful, this should return a request token.
 	requestToken, err := DoAutoLogin(kiteConfig)
@@ -88,12 +88,12 @@ func LoginAndStoreToken(db *gorm.DB) error {
 func FetchAccessTokenFromRequestToken(requestToken string) (string, error) {
 	kiteConfig, err := loadKiteConfig()
 	if err != nil {
-        return "", fmt.Errorf("failed to load KITE config: %w", err)
+		return "", fmt.Errorf("failed to load KITE config: %w", err)
 	}
 
-    if kiteConfig.APIKey == "" || kiteConfig.APISecret == "" || kiteConfig.UserID == "" || kiteConfig.Password == "" || kiteConfig.TOTPToken == "" {
-        return "", fmt.Errorf("KITE Connect API credentials not configured (missing API key, secret, user ID, password, or TOTP token)")
-    }
+	if kiteConfig.APIKey == "" || kiteConfig.APISecret == "" || kiteConfig.UserID == "" || kiteConfig.Password == "" || kiteConfig.TOTPToken == "" {
+		return "", fmt.Errorf("KITE Connect API credentials not configured (missing API key, secret, user ID, password, or TOTP token)")
+	}
 
 	// Calculate the checksum: SHA-256 of api_key + request_token + api_secret
 	checksumInput := kiteConfig.APIKey + requestToken + kiteConfig.APISecret
@@ -148,18 +148,18 @@ func FetchAccessTokenFromRequestToken(requestToken string) (string, error) {
 func DoManualLogin(kiteConfig *KiteConfig) {
 	kc := kiteconnect.New(kiteConfig.APIKey)
 
-    // Get the login URL
-    kiteLoginURL := kc.GetLoginURL()
-    log.Infof("--------------------------------")
-    log.Info("Please login to Kite Connect by visiting the below URL:")
+	// Get the login URL
+	kiteLoginURL := kc.GetLoginURL()
+	log.Infof("--------------------------------")
+	log.Info("Please login to Kite Connect by visiting the below URL:")
 	log.Info(kiteLoginURL)
-	log.Infof("--------------------------------")			
-    
+	log.Infof("--------------------------------")
+
 	log.Info("After authentication, the request token will be automatically captured and stored. Please copy the request token and paste it in the config file.")
 	log.Info("Retry the job once after you have completed the login process.")
-	
+
 	// TODO(Nitin) : Add a way to wait for user to press Enter.
-    return
+	return
 }
 
 // DoAutoLogin mimics the web-based Kite Connect authentication flow. It returns a request token if successful.
@@ -167,7 +167,7 @@ func DoAutoLogin(kiteConfig *KiteConfig) (string, error) {
 
 	kc := kiteconnect.New(kiteConfig.APIKey)
 	// This will be like: https://kite.zerodha.com/connect/login?api_key=random_api_key&v=3
-    initialLoginURL := kc.GetLoginURL()
+	initialLoginURL := kc.GetLoginURL()
 
 	// Create a session with cookies
 	client := &http.Client{
@@ -177,13 +177,13 @@ func DoAutoLogin(kiteConfig *KiteConfig) (string, error) {
 			return http.ErrUseLastResponse
 		},
 	}
-	
+
 	// Step 1: Make a call to the login URL.
 	sessionReq, err := http.NewRequest("GET", initialLoginURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create session request: %w", err)
 	}
-	
+
 	sessionReq.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	sessionReq.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
 	sessionReq.Header.Set("Accept-Language", "en-US,en;q=0.9")
@@ -196,11 +196,11 @@ func DoAutoLogin(kiteConfig *KiteConfig) (string, error) {
 
 	// Extract session ID from the response
 	var sessID string
-	
+
 	// Making a call to the login URL will redirect to a URL with session ID.
 	location := sessionResp.Header.Get("Location")
 	log.Infof("Response status: %d", sessionResp.StatusCode) // This should be 302.
-	log.Infof("Response location header: %s", location) // This will be like: https://kite.zerodha.com/connect/login?api_key=random_api_key&sess_id=random_sess_id
+	log.Infof("Response location header: %s", location)      // This will be like: https://kite.zerodha.com/connect/login?api_key=random_api_key&sess_id=random_sess_id
 
 	if location != "" {
 		// Extract session ID from redirect URL
@@ -315,7 +315,7 @@ func DoAutoLogin(kiteConfig *KiteConfig) (string, error) {
 	// Step 4: Get the redirect URL to extract request token
 	// The 2FA success should trigger a redirect to the callback URL with the request token
 	redirectURL := fmt.Sprintf("%s/connect/login?api_key=%s&sess_id=%s", BASE_URL, kiteConfig.APIKey, sessID)
-	
+
 	redirectReq, err := http.NewRequest("GET", redirectURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create redirect request: %w", err)
@@ -341,7 +341,7 @@ func DoAutoLogin(kiteConfig *KiteConfig) (string, error) {
 	if location == "" {
 		return "", fmt.Errorf("no redirect location found after 2FA")
 	}
-	
+
 	// Step 5: Visit the finish URL to get the final redirect with request token
 	finishReq, err := http.NewRequest("GET", location, nil)
 	if err != nil {
@@ -383,5 +383,3 @@ func DoAutoLogin(kiteConfig *KiteConfig) (string, error) {
 
 	return requestToken, nil
 }
-
- 

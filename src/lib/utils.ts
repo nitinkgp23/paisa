@@ -769,6 +769,22 @@ export function ajax(
 
 export function ajax(route: "/api/ping"): Promise<{ success: boolean; error?: string }>;
 
+export function ajax(route: "/api/background/tasks"): Promise<{
+  status: string;
+  tasks: Array<{
+    task_name: string;
+    last_run: string | null;
+    last_successful_run: string | null;
+    next_run: string | null;
+    success: boolean;
+  }>;
+}>;
+
+export function ajax(
+  route: `/api/background/tasks/${string}/run`,
+  options?: RequestOptions
+): Promise<{ success: boolean; message?: string }>;
+
 export async function ajax(
   route: string,
   options?: RequestOptions,

@@ -49,4 +49,4 @@ func (t *DailyPriceUpdateTask) Run(ctx context.Context, db *gorm.DB) error {
 
 	log.Info("Daily price update completed successfully")
 	return nil
-} 
+}

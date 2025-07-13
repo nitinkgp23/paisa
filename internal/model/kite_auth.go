@@ -1,17 +1,17 @@
 package model
 
 import (
-	"time"
 	"gorm.io/gorm"
+	"time"
 )
 
 // KiteAuth stores Kite Connect authentication data
 type KiteAuth struct {
-	ID          uint      `json:"id" gorm:"primaryKey"`
-	RequestToken string   `json:"request_token" gorm:"uniqueIndex"`
-	AccessToken  string   `json:"access_token"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID           uint      `json:"id" gorm:"primaryKey"`
+	RequestToken string    `json:"request_token" gorm:"uniqueIndex"`
+	AccessToken  string    `json:"access_token"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // TableName specifies the table name for KiteAuth
@@ -37,7 +37,7 @@ func StoreRequestToken(db *gorm.DB, requestToken string) error {
 	// Use Upsert to either update existing entry or create new one
 	var auth KiteAuth
 	result := db.First(&auth)
-	
+
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
 			// No existing entry, create new one
@@ -48,7 +48,7 @@ func StoreRequestToken(db *gorm.DB, requestToken string) error {
 		}
 		return result.Error
 	}
-	
+
 	// Update existing entry
 	auth.RequestToken = requestToken
 	return db.Save(&auth).Error
@@ -61,11 +61,11 @@ func UpdateAccessToken(db *gorm.DB, accessToken string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	if auth == nil {
 		return gorm.ErrRecordNotFound
 	}
-	
+
 	// Update the specific record
 	return db.Model(auth).
 		Update("access_token", accessToken).Error
