@@ -14,6 +14,7 @@ import (
 	"github.com/ananthakumaran/paisa/internal/config"
 	"github.com/ananthakumaran/paisa/internal/generator"
 	"github.com/ananthakumaran/paisa/internal/ledger"
+	"github.com/ananthakumaran/paisa/internal/model"
 	"github.com/ananthakumaran/paisa/internal/model/template"
 	"github.com/ananthakumaran/paisa/internal/prediction"
 	"github.com/ananthakumaran/paisa/internal/server/assets"
@@ -430,11 +431,36 @@ func Build(db *gorm.DB, enableCompression bool) *gin.Engine {
 		c.JSON(200, result)
 	})
 
+	// Kite Connect callback endpoint. This endpoint will be used only for manual login.
+	router.GET("/api/callback/kite", func(c *gin.Context) {
+		requestToken := c.Query("request_token")
+		if requestToken == "" {
+			c.JSON(400, gin.H{"error": "request_token is required"})
+			return
+		}
+
+		// Store the request token in the database
+		err := storeKiteRequestToken(db, requestToken)
+		if err != nil {
+			log.Errorf("Failed to store Kite request token: %v", err)
+			c.JSON(500, gin.H{"error": "Failed to store request token"})
+			return
+		}
+
+		log.Infof("Successfully stored Kite request token: %s", requestToken)
+		c.JSON(200, gin.H{"message": "Login successful! Request token stored."})
+	})
+
 	router.NoRoute(func(c *gin.Context) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(web.Index))
 	})
 
 	return router
+}
+
+// storeKiteRequestToken stores the Kite request token in the database
+func storeKiteRequestToken(db *gorm.DB, requestToken string) error {
+	return model.StoreRequestToken(db, requestToken)
 }
 
 func Listen(db *gorm.DB, port int) error {

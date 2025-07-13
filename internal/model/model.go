@@ -38,6 +38,7 @@ func AutoMigrate(db *gorm.DB) {
 	db.AutoMigrate(&stock_tag.StockTag{})
 	db.AutoMigrate(&stock_tag.StockTagAssociation{})
 	db.AutoMigrate(&task_execution.TaskExecution{})
+	db.AutoMigrate(&KiteAuth{})
 }
 
 func SyncJournal(db *gorm.DB) (string, error) {

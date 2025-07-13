@@ -14,19 +14,10 @@ import (
 	"github.com/shopspring/decimal"
 	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
+	"gopkg.in/yaml.v3"
 
 	"github.com/ananthakumaran/paisa/internal/config"
 )
-
-// KiteConfig holds the configuration for KITE Connect API
-type KiteConfig struct {
-	APIKey     string `json:"api_key" yaml:"api_key"`
-	APISecret  string `json:"api_secret" yaml:"api_secret"`
-	AccessToken string `json:"access_token" yaml:"access_token"`
-	UserID     string `json:"user_id" yaml:"user_id"`
-	Password   string `json:"password" yaml:"password"`
-	PIN        string `json:"pin" yaml:"pin"`
-}
 
 // Trade represents a trade from KITE Connect API
 type Trade struct {
@@ -43,7 +34,6 @@ type Trade struct {
 	ExchangeTimestamp time.Time   `json:"exchange_timestamp"`
 }
 
-// DailyTradesTask implements the background task for fetching daily trades
 type DailyTradesTask struct{}
 
 func (t *DailyTradesTask) Name() string {
@@ -55,36 +45,36 @@ func (t *DailyTradesTask) Schedule() string {
 }
 
 func (t *DailyTradesTask) ShouldRunOnStartup() bool {
-	return true // Should run on startup, but will be checked against database
+	return true
 }
 
 func (t *DailyTradesTask) Run(ctx context.Context, db *gorm.DB) error {
 	log.Info("Starting daily trades fetch from KITE Connect")
-	log.Info("Running from 30 seconds..")
-	time.Sleep(30 * time.Second)
-	return nil
-
 	// Load KITE configuration
 	kiteConfig, err := loadKiteConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load KITE config: %w", err)
 	}
 
-	// Check if we have the required configuration
-	if kiteConfig.APIKey == "" || kiteConfig.APISecret == "" {
-		log.Warn("KITE Connect API credentials not configured, skipping daily trades fetch")
-		return nil
+	// Get a valid access token. If the existing access token is expired, it will be refreshed.
+	// If a login flow is required, it will be performed and the request token will be stored in the database.
+	accessToken, err := GetValidAccessToken(db, kiteConfig.APIKey)
+	if err != nil {
+		log.Warnf("Failed to get a valid access token: %v", err)
+		return fmt.Errorf("failed to get a valid access token: %w", err)
 	}
 
-	// Get today's date
-	today := time.Now().Format("2006-01-02")
-	
+	log.Info("Successfully authenticated with KITE Connect")
+
+
+
 	// Fetch trades for today
-	trades, err := fetchDailyTrades(ctx, kiteConfig, today)
+	trades, err := fetchDailyTrades(ctx, kiteConfig.APIKey, accessToken)
 	if err != nil {
 		return fmt.Errorf("failed to fetch daily trades: %w", err)
 	}
 
+	log.Infof("Trades: %+v", trades)
 	if len(trades) == 0 {
 		log.Info("No trades found for today")
 		return nil
@@ -93,10 +83,10 @@ func (t *DailyTradesTask) Run(ctx context.Context, db *gorm.DB) error {
 	log.Infof("Found %d trades for today", len(trades))
 
 	// Convert trades to ledger format and save
-	err = saveTradesToLedger(db, trades, today)
-	if err != nil {
-		return fmt.Errorf("failed to save trades to ledger: %w", err)
-	}
+	// err = saveTradesToLedger(db, trades, today)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to save trades to ledger: %w", err)
+	// }
 
 	log.Infof("Successfully processed %d trades", len(trades))
 	return nil
@@ -113,24 +103,18 @@ func loadKiteConfig() (*KiteConfig, error) {
 		templateConfig := &KiteConfig{
 			APIKey:     "your_api_key_here",
 			APISecret:  "your_api_secret_here",
-			AccessToken: "your_access_token_here",
 			UserID:     "your_user_id_here",
 			Password:   "your_password_here",
-			PIN:        "your_pin_here",
+			TOTPToken:  "your_totp_secret_here", // Base32 encoded TOTP secret
 		}
 
-		configData, err := json.MarshalIndent(templateConfig, "", "  ")
+		// Generate proper YAML
+		yamlData, err := yaml.Marshal(templateConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal template config: %w", err)
 		}
 
-		// Convert to YAML format (simple conversion for template)
-		yamlConfig := strings.ReplaceAll(string(configData), `"`, "")
-		yamlConfig = strings.ReplaceAll(yamlConfig, "{", "")
-		yamlConfig = strings.ReplaceAll(yamlConfig, "}", "")
-		yamlConfig = strings.ReplaceAll(yamlConfig, ",", "")
-
-		err = os.WriteFile(kiteConfigPath, []byte(yamlConfig), 0600)
+		err = os.WriteFile(kiteConfigPath, yamlData, 0600)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create template config file: %w", err)
 		}
@@ -147,7 +131,7 @@ func loadKiteConfig() (*KiteConfig, error) {
 	}
 
 	var kiteConfig KiteConfig
-	err = json.Unmarshal(configData, &kiteConfig)
+	err = yaml.Unmarshal(configData, &kiteConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse KITE config file: %w", err)
 	}
@@ -156,9 +140,9 @@ func loadKiteConfig() (*KiteConfig, error) {
 }
 
 // fetchDailyTrades fetches trades for a specific date from KITE Connect API
-func fetchDailyTrades(ctx context.Context, config *KiteConfig, date string) ([]Trade, error) {
+func fetchDailyTrades(ctx context.Context, apiKey string, accessToken string) ([]Trade, error) {
 	// KITE Connect API endpoint for fetching trades
-	url := fmt.Sprintf("https://api.kite.trade/orders/trades?from_date=%s&to_date=%s", date, date)
+	url := fmt.Sprintf("https://api.kite.trade/portfolio/holdings")
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -167,7 +151,7 @@ func fetchDailyTrades(ctx context.Context, config *KiteConfig, date string) ([]T
 
 	// Add authentication headers
 	req.Header.Set("X-Kite-Version", "3")
-	req.Header.Set("Authorization", fmt.Sprintf("token %s:%s", config.APIKey, config.AccessToken))
+	req.Header.Set("Authorization", fmt.Sprintf("token %s:%s", apiKey, accessToken))
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
@@ -277,4 +261,4 @@ func generateLedgerEntry(trade Trade, date string) string {
 	entry += "    Assets:Broker:Zerodha"
 
 	return entry
-} 
+}

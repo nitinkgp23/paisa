@@ -2,7 +2,6 @@ package prices
 
 import (
 	"context"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -27,9 +26,6 @@ func (t *DailyPriceUpdateTask) ShouldRunOnStartup() bool {
 
 func (t *DailyPriceUpdateTask) Run(ctx context.Context, db *gorm.DB) error {
 	log.Info("Starting daily price update")
-	log.Info("Running from 30 seconds..")
-	time.Sleep(30 * time.Second)
-	return nil
 
 	// Update commodity prices
 	err := model.SyncCommodities(db)
