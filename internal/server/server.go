@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/subtle"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ananthakumaran/paisa/internal/accounting"
+	"github.com/ananthakumaran/paisa/internal/background"
 	"github.com/ananthakumaran/paisa/internal/config"
 	"github.com/ananthakumaran/paisa/internal/generator"
 	"github.com/ananthakumaran/paisa/internal/ledger"
@@ -389,6 +391,45 @@ func Build(db *gorm.DB, enableCompression bool) *gin.Engine {
 		c.JSON(200, GetCreditCard(db, c.Param("account")))
 	})
 
+	router.GET("/api/background/tasks", func(c *gin.Context) {
+		result := GetBackgroundTasks(db)
+		if result["error"] != nil {
+			c.JSON(500, result)
+			return
+		}
+		c.JSON(200, result)
+	})
+
+	router.POST("/api/background/tasks/kite-trades/run", func(c *gin.Context) {
+		if config.GetConfig().Readonly {
+			c.JSON(200, gin.H{"success": false, "message": "Readonly mode"})
+			return
+		}
+
+		result := RunKiteTradesTask(db)
+		c.JSON(200, result)
+	})
+
+	router.POST("/api/background/tasks/price-update/run", func(c *gin.Context) {
+		if config.GetConfig().Readonly {
+			c.JSON(200, gin.H{"success": false, "message": "Readonly mode"})
+			return
+		}
+
+		result := RunPriceUpdateTask(db)
+		c.JSON(200, result)
+	})
+
+	router.POST("/api/background/stop", func(c *gin.Context) {
+		if config.GetConfig().Readonly {
+			c.JSON(200, gin.H{"success": false, "message": "Readonly mode"})
+			return
+		}
+
+		result := StopBackgroundScheduler()
+		c.JSON(200, result)
+	})
+
 	router.NoRoute(func(c *gin.Context) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(web.Index))
 	})
@@ -396,14 +437,52 @@ func Build(db *gorm.DB, enableCompression bool) *gin.Engine {
 	return router
 }
 
-func Listen(db *gorm.DB, port int) {
+func Listen(db *gorm.DB, port int) error {
+	return ListenWithContext(context.Background(), db, port)
+}
+
+func ListenWithContext(ctx context.Context, db *gorm.DB, port int) error {
 	router := Build(db, true)
 
-	log.Infof("Listening on http://localhost:%d", port)
-	err := router.Run(fmt.Sprintf(":%d", port))
-	if err != nil {
-		log.Fatal(err)
+	// Initialize and start background scheduler
+	background.GetScheduler().Initialize(db)
+	background.GetScheduler().Start()
+
+	// Create HTTP server
+	srv := &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: router,
 	}
+
+	// Start server in a goroutine
+	go func() {
+		log.Infof("Listening on http://localhost:%d", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server error: %v", err)
+		}
+	}()
+
+	// Wait for context cancellation (shutdown signal)
+	<-ctx.Done()
+	
+	// Graceful shutdown
+	log.Info("Shutting down HTTP server...")
+	
+	// Stop the background scheduler first
+	log.Info("Stopping background scheduler...")
+	background.GetScheduler().Stop()
+	
+	// Then shutdown the HTTP server
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Errorf("Server shutdown error: %v", err)
+		return err
+	}
+	
+	log.Info("Server shutdown completed successfully")
+	return nil
 }
 
 func TokenAuthMiddleware() gin.HandlerFunc {

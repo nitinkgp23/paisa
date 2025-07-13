@@ -119,6 +119,7 @@
       label: "More",
       href: "/more",
       children: [
+        { label: "Background", href: "/background", help: "background" },
         { label: "Configuration", href: "/config", help: "config" },
         { label: "Sheets", href: "/sheets", help: "sheets", disablePreload: true },
         { label: "Goals", href: "/goals", help: "goals" },
