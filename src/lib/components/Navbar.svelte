@@ -126,7 +126,7 @@
         { label: "Doctor", href: "/doctor" },
         { label: "Logs", href: "/logs" }
       ]
-    },
+    }
   ];
 
   const tax = {
