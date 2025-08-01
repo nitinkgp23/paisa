@@ -67,8 +67,8 @@ func generateTOTP(secret string) (string, error) {
 	return code, nil
 }
 
-// This creates a fresh request token and stores it in the database.
-func LoginAndStoreToken(db *gorm.DB) error {
+// This creates a fresh request token and stores it in the database for a specific API key.
+func LoginAndStoreTokenForAPIKey(db *gorm.DB, apiKey string) error {
 	kiteConfig, err := loadKiteConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load KITE config: %w", err)
@@ -78,29 +78,38 @@ func LoginAndStoreToken(db *gorm.DB) error {
 		return fmt.Errorf("no KITE accounts configured")
 	}
 
-	// For now, we'll use the first account for login
-	// In the future, this could be enhanced to handle multiple accounts
-	account := kiteConfig.Accounts[0]
+	// Find the account with the matching API key
+	var targetAccount *KiteAccount
+	for i := range kiteConfig.Accounts {
+		if kiteConfig.Accounts[i].APIKey == apiKey {
+			targetAccount = &kiteConfig.Accounts[i]
+			break
+		}
+	}
 
-	if account.APIKey == "" || account.APISecret == "" || account.UserID == "" || account.Password == "" || account.TOTPToken == "" {
-		return fmt.Errorf("KITE Connect API credentials not configured (missing API key, secret, user ID, password, or TOTP token)")
+	if targetAccount == nil {
+		return fmt.Errorf("no account found with API key: %s", apiKey)
+	}
+
+	if targetAccount.APIKey == "" || targetAccount.APISecret == "" || targetAccount.UserID == "" || targetAccount.Password == "" || targetAccount.TOTPToken == "" {
+		return fmt.Errorf("KITE Connect API credentials not configured for account %s (missing API key, secret, user ID, password, or TOTP token)", targetAccount.Name)
 	}
 
 	// Attempt to auto login using saved credentials first. If successful, this should return a request token.
-	requestToken, err := DoAutoLogin(&account)
+	requestToken, err := DoAutoLogin(targetAccount)
 	if err == nil {
-		model.StoreRequestToken(db, requestToken)
+		model.StoreRequestToken(db, apiKey, requestToken)
 		return nil
 	} else {
-		log.Errorf("Failed to login with web flow: %v", err)
-		DoManualLogin(&account)
+		log.Errorf("Failed to login with web flow for account %s: %v", targetAccount.Name, err)
+		DoManualLogin(targetAccount)
 	}
 
 	return nil
 }
 
-// FetchAccessTokenFromRequestToken gets an access token from a request token.
-func FetchAccessTokenFromRequestToken(requestToken string) (string, error) {
+// FetchAccessTokenFromRequestToken gets an access token from a request token for a specific API key.
+func FetchAccessTokenFromRequestToken(apiKey string, requestToken string) (string, error) {
 	kiteConfig, err := loadKiteConfig()
 	if err != nil {
 		return "", fmt.Errorf("failed to load KITE config: %w", err)
@@ -110,21 +119,30 @@ func FetchAccessTokenFromRequestToken(requestToken string) (string, error) {
 		return "", fmt.Errorf("no KITE accounts configured")
 	}
 
-	// For now, we'll use the first account
-	// In the future, this could be enhanced to handle multiple accounts
-	account := kiteConfig.Accounts[0]
+	// Find the account with the matching API key
+	var targetAccount *KiteAccount
+	for i := range kiteConfig.Accounts {
+		if kiteConfig.Accounts[i].APIKey == apiKey {
+			targetAccount = &kiteConfig.Accounts[i]
+			break
+		}
+	}
 
-	if account.APIKey == "" || account.APISecret == "" || account.UserID == "" || account.Password == "" || account.TOTPToken == "" {
-		return "", fmt.Errorf("KITE Connect API credentials not configured (missing API key, secret, user ID, password, or TOTP token)")
+	if targetAccount == nil {
+		return "", fmt.Errorf("no account found with API key: %s", apiKey)
+	}
+
+	if targetAccount.APIKey == "" || targetAccount.APISecret == "" || targetAccount.UserID == "" || targetAccount.Password == "" || targetAccount.TOTPToken == "" {
+		return "", fmt.Errorf("KITE Connect API credentials not configured for account %s (missing API key, secret, user ID, password, or TOTP token)", targetAccount.Name)
 	}
 
 	// Calculate the checksum: SHA-256 of api_key + request_token + api_secret
-	checksumInput := account.APIKey + requestToken + account.APISecret
+	checksumInput := targetAccount.APIKey + requestToken + targetAccount.APISecret
 	checksum := utils.Sha256(checksumInput)
 
 	sessionURL := "https://api.kite.trade/session/token"
 	sessionData := url.Values{}
-	sessionData.Set("api_key", account.APIKey)
+	sessionData.Set("api_key", targetAccount.APIKey)
 	sessionData.Set("request_token", requestToken)
 	sessionData.Set("checksum", checksum)
 
@@ -163,7 +181,7 @@ func FetchAccessTokenFromRequestToken(requestToken string) (string, error) {
 	}
 
 	accessToken := sessionResponse.Data.AccessToken
-	log.Infof("Successfully got access token: %s", accessToken)
+	log.Infof("Successfully got access token for account %s: %s", targetAccount.Name, accessToken)
 
 	return accessToken, nil
 }

@@ -96,6 +96,7 @@ func (t *DailyTradesTask) Run(ctx context.Context, db *gorm.DB) error {
 
 		// Fetch trades for today for this account
 		trades, err := fetchDailyTrades(ctx, account.APIKey, accessToken)
+		log.Infof("Fetched %d trades for account %s %s", len(trades), account.APIKey, accessToken)
 		if err != nil {
 			log.Warnf("Failed to fetch daily trades for account %s: %v", account.Name, err)
 			continue // Continue with other accounts even if one fails

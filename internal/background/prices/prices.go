@@ -21,7 +21,7 @@ func (t *DailyPriceUpdateTask) Schedule() string {
 }
 
 func (t *DailyPriceUpdateTask) ShouldRunOnStartup() bool {
-	return true // Should run on every startup
+	return false // Should run on every startup
 }
 
 func (t *DailyPriceUpdateTask) Run(ctx context.Context, db *gorm.DB) error {

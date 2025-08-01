@@ -459,8 +459,13 @@ func Build(db *gorm.DB, enableCompression bool) *gin.Engine {
 }
 
 // storeKiteRequestToken stores the Kite request token in the database
+// For manual login, we'll use a placeholder API key since this is for backward compatibility
 func storeKiteRequestToken(db *gorm.DB, requestToken string) error {
-	return model.StoreRequestToken(db, requestToken)
+	// For manual login callback, we'll use a placeholder API key
+	// This maintains backward compatibility with the old single-account system
+	// In the new multi-account system, this should be updated to include the API key in the callback URL
+	placeholderAPIKey := "manual_login_placeholder"
+	return model.StoreRequestToken(db, placeholderAPIKey, requestToken)
 }
 
 func Listen(db *gorm.DB, port int) error {
