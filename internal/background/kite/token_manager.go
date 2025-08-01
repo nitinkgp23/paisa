@@ -3,21 +3,22 @@ package kite
 import (
 	"encoding/json"
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	"gorm.io/gorm"
 	"io"
 	"net/http"
 	"time"
 
+	log "github.com/sirupsen/logrus"
+	"gorm.io/gorm"
+
 	"github.com/ananthakumaran/paisa/internal/model"
 )
 
-// GetValidAccessToken returns a valid access token from the database. If the existing access token is expired, it will be refreshed.
+// GetValidAccessToken returns a valid access token from the database for a specific API key. If the existing access token is expired, it will be refreshed.
 func GetValidAccessToken(db *gorm.DB, apiKey string) (string, error) {
-	// Get the current authentication data from the database
-	auth, err := model.GetLatestAuth(db)
+	// Get the current authentication data from the database for this API key
+	auth, err := model.GetAuthByAPIKey(db, apiKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to get stored authentication data: %w", err)
+		return "", fmt.Errorf("failed to get stored authentication data for API key %s: %w", apiKey, err)
 	}
 
 	// If we already have an access token, check whether it is expired.
@@ -26,33 +27,33 @@ func GetValidAccessToken(db *gorm.DB, apiKey string) (string, error) {
 	}
 
 	if auth == nil || auth.RequestToken == "" {
-		// No request token found in database, attempt to login and store the request token.
-		log.Info("No request token found in database, attempt to login and store the request token.")
-		err = LoginAndStoreToken(db)
+		// No request token found in database for this API key, attempt to login and store the request token.
+		log.Infof("No request token found in database for API key %s, attempt to login and store the request token.", apiKey)
+		err = LoginAndStoreTokenForAPIKey(db, apiKey)
 		if err != nil {
-			return "", fmt.Errorf("failed to login and store token: %w", err)
+			return "", fmt.Errorf("failed to login and store token for API key %s: %w", apiKey, err)
 		}
 
-		auth, err = model.GetLatestAuth(db)
+		auth, err = model.GetAuthByAPIKey(db, apiKey)
 		if err != nil {
-			return "", fmt.Errorf("failed to get latest auth: %w", err)
+			return "", fmt.Errorf("failed to get latest auth for API key %s: %w", apiKey, err)
 		}
 	}
 
 	if auth == nil || auth.RequestToken == "" {
 		// Unexpected. Since, a login flow should have created a request token.
-		return "", fmt.Errorf("Unexpected. Login flow should have created a request token.")
+		return "", fmt.Errorf("Unexpected. Login flow should have created a request token for API key %s.", apiKey)
 	}
 
 	// Try to get access token with retry logic
-	accessToken, err := getAccessTokenFromRequestTokenWithRetry(db, auth.RequestToken)
+	accessToken, err := getAccessTokenFromRequestTokenWithRetry(db, apiKey, auth.RequestToken)
 	if err != nil {
-		return "", fmt.Errorf("failed to get access token after retry: %w", err)
+		return "", fmt.Errorf("failed to get access token after retry for API key %s: %w", apiKey, err)
 	}
 
-	err = model.UpdateAccessToken(db, accessToken)
+	err = model.UpdateAccessToken(db, apiKey, accessToken)
 	if err != nil {
-		return "", fmt.Errorf("failed to update access token in database: %w", err)
+		return "", fmt.Errorf("failed to update access token in database for API key %s: %w", apiKey, err)
 	}
 
 	return accessToken, nil
@@ -119,11 +120,11 @@ func checkIfAccessTokenIsExpired(apiKey string, accessToken string) bool {
 }
 
 // getAccessTokenFromRequestTokenWithRetry attempts to get an access token with automatic retry logic
-func getAccessTokenFromRequestTokenWithRetry(db *gorm.DB, requestToken string) (string, error) {
+func getAccessTokenFromRequestTokenWithRetry(db *gorm.DB, apiKey string, requestToken string) (string, error) {
 	const maxRetries = 2
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		accessToken, err := FetchAccessTokenFromRequestToken(requestToken)
+		accessToken, err := FetchAccessTokenFromRequestToken(apiKey, requestToken)
 		if err == nil {
 			return accessToken, nil
 		}
@@ -133,16 +134,16 @@ func getAccessTokenFromRequestTokenWithRetry(db *gorm.DB, requestToken string) (
 			return "", fmt.Errorf("failed to get access token after %d attempts: %w", maxRetries+1, err)
 		}
 
-		log.Infof("Attempt %d failed to fetch access token, starting new login flow...", attempt+1)
+		log.Infof("Attempt %d failed to fetch access token for API key %s, starting new login flow...", attempt+1, apiKey)
 
-		// Start a new login flow to get a fresh request token
-		err = LoginAndStoreToken(db)
+		// Start a new login flow to get a fresh request token for this API key
+		err = LoginAndStoreTokenForAPIKey(db, apiKey)
 		if err != nil {
 			return "", fmt.Errorf("failed to login and store token on attempt %d: %w", attempt+1, err)
 		}
 
-		// Get the updated auth data with new request token
-		auth, err := model.GetLatestAuth(db)
+		// Get the updated auth data with new request token for this API key
+		auth, err := model.GetAuthByAPIKey(db, apiKey)
 		if err != nil {
 			return "", fmt.Errorf("failed to get latest auth after login on attempt %d: %w", attempt+1, err)
 		}

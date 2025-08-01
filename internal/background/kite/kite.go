@@ -19,6 +19,26 @@ import (
 	"github.com/ananthakumaran/paisa/internal/config"
 )
 
+// KiteTime is a custom time type that can handle KITE API timestamp format
+type KiteTime struct {
+	time.Time
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for KITE API timestamp format
+func (kt *KiteTime) UnmarshalJSON(data []byte) error {
+	// Remove quotes from the JSON string
+	str := strings.Trim(string(data), `"`)
+
+	// Parse the specific KITE API format: "2021-05-31 16:00:36"
+	t, err := time.Parse("2006-01-02 15:04:05", str)
+	if err != nil {
+		return fmt.Errorf("unable to parse KITE timestamp %s: %w", str, err)
+	}
+
+	kt.Time = t
+	return nil
+}
+
 // Trade represents a trade from KITE Connect API
 type Trade struct {
 	TradeID           string          `json:"trade_id"`
@@ -30,8 +50,8 @@ type Trade struct {
 	Product           string          `json:"product"`
 	AveragePrice      decimal.Decimal `json:"average_price"`
 	Quantity          int             `json:"quantity"`
-	FillTimestamp     time.Time       `json:"fill_timestamp"`
-	ExchangeTimestamp time.Time       `json:"exchange_timestamp"`
+	FillTimestamp     KiteTime        `json:"fill_timestamp"`
+	ExchangeTimestamp KiteTime        `json:"exchange_timestamp"`
 }
 
 type DailyTradesTask struct{}
@@ -49,44 +69,50 @@ func (t *DailyTradesTask) ShouldRunOnStartup() bool {
 }
 
 func (t *DailyTradesTask) Run(ctx context.Context, db *gorm.DB) error {
-	log.Info("Starting daily trades fetch from KITE Connect")
+	log.Info("Starting daily trades fetch from KITE Connect for all accounts")
+
 	// Load KITE configuration
 	kiteConfig, err := loadKiteConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load KITE config: %w", err)
 	}
 
-	// Get a valid access token. If the existing access token is expired, it will be refreshed.
-	// If a login flow is required, it will be performed and the request token will be stored in the database.
-	accessToken, err := GetValidAccessToken(db, kiteConfig.APIKey)
-	if err != nil {
-		log.Warnf("Failed to get a valid access token: %v", err)
-		return fmt.Errorf("failed to get a valid access token: %w", err)
+	if len(kiteConfig.Accounts) == 0 {
+		return fmt.Errorf("no KITE accounts configured")
 	}
 
-	log.Info("Successfully authenticated with KITE Connect")
+	// Process each account
+	for _, account := range kiteConfig.Accounts {
+		log.Infof("Processing account: %s", account.Name)
 
-	// Fetch trades for today
-	trades, err := fetchDailyTrades(ctx, kiteConfig.APIKey, accessToken)
-	if err != nil {
-		return fmt.Errorf("failed to fetch daily trades: %w", err)
+		// Get a valid access token for this account
+		accessToken, err := GetValidAccessToken(db, account.APIKey)
+		if err != nil {
+			log.Warnf("Failed to get a valid access token for account %s: %v", account.Name, err)
+			continue // Continue with other accounts even if one fails
+		}
+
+		log.Infof("Successfully authenticated with KITE Connect for account: %s", account.Name)
+
+		// Fetch trades for today for this account
+		trades, err := fetchDailyTrades(ctx, account.APIKey, accessToken)
+		log.Infof("Fetched %d trades for account %s %s", len(trades), account.APIKey, accessToken)
+		if err != nil {
+			log.Warnf("Failed to fetch daily trades for account %s: %v", account.Name, err)
+			continue // Continue with other accounts even if one fails
+		}
+
+		log.Infof("Found %d trades for account %s", len(trades), account.Name)
+
+		// Convert trades to ledger format and save
+		err = saveTradesToLedger(account.Name, trades, time.Now().Format("2006-01-02"))
+		if err != nil {
+			return fmt.Errorf("failed to save trades to ledger: %w", err)
+		}
+
+		log.Infof("Successfully processed %d trades for account %s", len(trades), account.Name)
 	}
 
-	log.Infof("Trades: %+v", trades)
-	if len(trades) == 0 {
-		log.Info("No trades found for today")
-		return nil
-	}
-
-	log.Infof("Found %d trades for today", len(trades))
-
-	// Convert trades to ledger format and save
-	// err = saveTradesToLedger(db, trades, today)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to save trades to ledger: %w", err)
-	// }
-
-	log.Infof("Successfully processed %d trades", len(trades))
 	return nil
 }
 
@@ -97,13 +123,25 @@ func loadKiteConfig() (*KiteConfig, error) {
 
 	// Check if config file exists
 	if _, err := os.Stat(kiteConfigPath); os.IsNotExist(err) {
-		// Create a template config file
 		templateConfig := &KiteConfig{
-			APIKey:    "your_api_key_here",
-			APISecret: "your_api_secret_here",
-			UserID:    "your_user_id_here",
-			Password:  "your_password_here",
-			TOTPToken: "your_totp_secret_here", // Base32 encoded TOTP secret
+			Accounts: []KiteAccount{
+				{
+					Name:      "Primary Account",
+					APIKey:    "your_api_key_here",
+					APISecret: "your_api_secret_here",
+					UserID:    "your_user_id_here",
+					Password:  "your_password_here",
+					TOTPToken: "your_totp_secret_here",
+				},
+				{
+					Name:      "Secondary Account",
+					APIKey:    "your_second_api_key_here",
+					APISecret: "your_second_api_secret_here",
+					UserID:    "your_second_user_id_here",
+					Password:  "your_second_password_here",
+					TOTPToken: "your_second_totp_secret_here",
+				},
+			},
 		}
 
 		// Generate proper YAML
@@ -140,7 +178,7 @@ func loadKiteConfig() (*KiteConfig, error) {
 // fetchDailyTrades fetches trades for a specific date from KITE Connect API
 func fetchDailyTrades(ctx context.Context, apiKey string, accessToken string) ([]Trade, error) {
 	// KITE Connect API endpoint for fetching trades
-	url := fmt.Sprintf("https://api.kite.trade/portfolio/holdings")
+	url := "https://api.kite.trade/trades"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -187,7 +225,7 @@ func fetchDailyTrades(ctx context.Context, apiKey string, accessToken string) ([
 }
 
 // saveTradesToLedger converts trades to ledger format and saves them
-func saveTradesToLedger(db *gorm.DB, trades []Trade, date string) error {
+func saveTradesToLedger(accountName string, trades []Trade, date string) error {
 	journalPath := config.GetJournalPath()
 
 	// Read existing journal content
@@ -196,12 +234,16 @@ func saveTradesToLedger(db *gorm.DB, trades []Trade, date string) error {
 		return fmt.Errorf("failed to read journal file: %w", err)
 	}
 
+	commentTime := time.Now().Format("3:04 PM")
+
 	// Generate ledger entries for trades
 	var ledgerEntries []string
 	for _, trade := range trades {
-		entry := generateLedgerEntry(trade, date)
+		entry := generateLedgerEntry(trade)
 		if entry != "" {
-			ledgerEntries = append(ledgerEntries, entry)
+			// Add comment with date, time and account name before each entry
+			commentedEntry := fmt.Sprintf("; Auto added on %s %s - %s \n%s", date, commentTime, accountName, entry)
+			ledgerEntries = append(ledgerEntries, commentedEntry)
 		}
 	}
 
@@ -210,10 +252,8 @@ func saveTradesToLedger(db *gorm.DB, trades []Trade, date string) error {
 		return nil
 	}
 
-	// Add a header comment for the day's trades
-	tradeSection := fmt.Sprintf("\n; KITE Connect Trades - %s\n", date)
-	tradeSection += strings.Join(ledgerEntries, "\n\n")
-	tradeSection += "\n"
+	// Join entries with double newlines for better readability
+	tradeSection := "\n" + strings.Join(ledgerEntries, "\n\n") + "\n"
 
 	// Append to journal file
 	updatedContent := string(journalContent) + tradeSection
@@ -227,24 +267,21 @@ func saveTradesToLedger(db *gorm.DB, trades []Trade, date string) error {
 }
 
 // generateLedgerEntry converts a trade to ledger format
-func generateLedgerEntry(trade Trade, date string) string {
-	// Parse the date
-	tradeDate, err := time.Parse("2006-01-02", date)
-	if err != nil {
-		log.Errorf("Failed to parse trade date %s: %v", date, err)
-		return ""
-	}
+func generateLedgerEntry(trade Trade) string {
+	// Use the actual trade timestamp from the API
+	tradeDate := trade.FillTimestamp.Time
 
 	// Determine transaction type and quantity
 	quantity := trade.Quantity
 	description := ""
 
-	if trade.TransactionType == "BUY" {
+	switch trade.TransactionType {
+	case "BUY":
 		description = fmt.Sprintf("Purchased %d Shares of %s", quantity, trade.TradingSymbol)
-	} else if trade.TransactionType == "SELL" {
+	case "SELL":
 		quantity = -quantity
 		description = fmt.Sprintf("Sold %d Shares of %s", trade.Quantity, trade.TradingSymbol)
-	} else {
+	default:
 		log.Warnf("Unknown transaction type: %s", trade.TransactionType)
 		return ""
 	}
@@ -254,9 +291,9 @@ func generateLedgerEntry(trade Trade, date string) string {
 
 	// Generate ledger entry
 	entry := fmt.Sprintf("%s %s\n", tradeDate.Format("2006/01/02"), description)
-	entry += fmt.Sprintf("    Assets:Stocks:%s\t\t\t%d \"%s\" @ %s INR\n",
+	entry += fmt.Sprintf("    Assets:Equity:Stocks:%s\t\t\t%d \"%s\" @ %s INR\n",
 		trade.TradingSymbol, quantity, trade.TradingSymbol, price.String())
-	entry += "    Assets:Broker:Zerodha"
+	entry += "    Assets:Checking:Broker:Zerodha"
 
 	return entry
 }
